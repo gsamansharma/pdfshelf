@@ -29,9 +29,11 @@ func Add(filePath string, name string) {
 	}
 
 	entry := model.PDFEntry{
-		ID:       lib.NextID,
-		Name:     name,
-		FilePath: absPath,
+		ID:             lib.NextID,
+		Name:           name,
+		FilePath:       absPath,
+		AddedOn:        time.Now(),
+		TotalTimeSpent: 0,
 	}
 
 	lib.PDFs = append(lib.PDFs, entry)
@@ -54,50 +56,52 @@ func List() {
 		fmt.Println("Your shelf is empty. Add a PDF with 'pdfshelf add ...'")
 		return
 	}
+
 	fmt.Println("Your PDF Shelf:")
 	for _, entry := range lib.PDFs {
 		durationStr := entry.TotalTimeSpent.Round(time.Second).String()
-		fmt.Printf("[%d] %s\n	%s\n    %s\n", entry.ID, entry.Name, durationStr, entry.FilePath)
+		fmt.Printf("[%d] %s (Time: %s)\n    %s\n",
+			entry.ID,
+			entry.Name,
+			durationStr,
+			entry.FilePath)
 	}
 }
 
-func Open(idStr string) {
+func FindByID(idStr string) (*model.PDFEntry, int, error) {
 	lib, err := storage.LoadLibrary()
 	if err != nil {
-		fmt.Println("Error loading library:", err)
-		return
+		return nil, -1, fmt.Errorf("Error loading library: %v", err)
 	}
 
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		fmt.Println("Invalid ID. Must be a number.")
-		return
+		return nil, -1, fmt.Errorf("Invalid ID. Must be a number.")
 	}
 
-	var foundEntry *model.PDFEntry
-	var entryIndex int = -1 
+	var entryIndex int = -1
 	for i := range lib.PDFs {
 		if lib.PDFs[i].ID == id {
-			foundEntry = &lib.PDFs[i]
 			entryIndex = i
 			break
 		}
 	}
 
-	if foundEntry == nil {
-		fmt.Printf("Error: No PDF found with ID %d\n", id)
-		return
+	if entryIndex == -1 {
+		return nil, -1, fmt.Errorf("Error: No PDF found with ID %d", id)
 	}
 
+	return &lib.PDFs[entryIndex], entryIndex, nil
+}
+
+func LaunchZathura(entry model.PDFEntry, entryIndex int) error {
 	if _, err := exec.LookPath("zathura"); err != nil {
-		fmt.Println("Error: zathura executable not found in your PATH.")
-		return
+		return fmt.Errorf("Error: zathura executable not found in your PATH.")
 	}
 
-	cmd := exec.Command("zathura", foundEntry.FilePath)
+	cmd := exec.Command("zathura", entry.FilePath)
 
-	fmt.Printf("Opening '%s'. Timer is running. (Terminal will wait until Zathura is closed)...\n", foundEntry.Name)
-
+	fmt.Printf("Opening '%s'. Timer is running...\n", entry.Name)
 	startTime := time.Now()
 
 	if err := cmd.Run(); err != nil {
@@ -105,16 +109,30 @@ func Open(idStr string) {
 	}
 
 	duration := time.Since(startTime)
-	
 	fmt.Printf("Session finished. Time spent: %s\n", duration.Round(time.Second).String())
 
+	lib, err := storage.LoadLibrary()
+	if err != nil {
+		return fmt.Errorf("Error loading library to save time: %v", err)
+	}
 
-	lib.PDFs[entryIndex].TotalTimeSpent += duration
+	var found bool
+	for i := range lib.PDFs {
+		if lib.PDFs[i].ID == entry.ID {
+			lib.PDFs[i].TotalTimeSpent += duration
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("Error saving time: could not find entry after reload.")
+	}
 
 	if err := storage.SaveLibrary(lib); err != nil {
-		fmt.Println("Error saving session time:", err)
-		return
+		return fmt.Errorf("Error saving session time: %v", err)
 	}
 
 	fmt.Println("Time saved.")
+	return nil
 }

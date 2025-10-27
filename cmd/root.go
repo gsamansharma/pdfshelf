@@ -9,9 +9,10 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "pdfshelf",
 	Short: "A CLI tool to manage your PDF library",
-	Long: `pdfshelf helps you add, list, and open PDFs from your terminal,
-keeping track of your reading time and bookmarks.`,
-
+	Long: `pdfshelf helps you add, list, and open PDFs from your terminal.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		listCmd.Run(cmd, args)
+	},
 }
 
 func Execute() {
