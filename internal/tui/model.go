@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"pdfshelf/internal/commands"
 	"pdfshelf/internal/model"
 )
 
@@ -50,7 +52,14 @@ func New(pdfEntries []model.PDFEntry) TUIModel {
 	l.Styles.Title = titleStyle
 	l.Styles.PaginationStyle = paginationStyle
 	l.Styles.HelpStyle = helpStyle
-
+	l.SetShowHelp(true)
+	l.AdditionalShortHelpKeys = func() []key.Binding {
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open")),
+			key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
+			key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
+		}
+	}
 	return TUIModel{List: l}
 }
 
@@ -66,6 +75,10 @@ func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.List.FilterState() == list.Filtering {
+			break
+		}
+
 		switch keypress := msg.String(); keypress {
 		case "ctrl+c", "q":
 			m.quitting = true
@@ -79,6 +92,24 @@ func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.quitting = true
 			return m, tea.Quit
+
+		case "d":
+			i, ok := m.List.SelectedItem().(item)
+			if !ok {
+				return m, nil 
+			}
+
+			idStr := fmt.Sprintf("%d", i.entry.ID)
+
+			if err := commands.Remove(idStr); err != nil {
+				m.List.NewStatusMessage(fmt.Sprintf("Error: %v", err))
+				return m, nil
+			}
+
+			m.List.RemoveItem(m.List.Index())
+			m.List.NewStatusMessage(fmt.Sprintf("Removed '%s'", i.Title()))
+
+			return m, nil
 		}
 	}
 

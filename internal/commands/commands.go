@@ -136,3 +136,34 @@ func LaunchZathura(entry model.PDFEntry, entryIndex int) error {
 	fmt.Println("Time saved.")
 	return nil
 }
+
+func Remove(idStr string) error {
+	lib, err := storage.LoadLibrary()
+	if err != nil {
+		return fmt.Errorf("Error loading library: %v", err)
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return fmt.Errorf("Invalid ID. Must be a number.")
+	}
+
+	foundIndex := -1
+	for i, entry := range lib.PDFs {
+		if entry.ID == id {
+			foundIndex = i
+			break
+		}
+	}
+
+	if foundIndex == -1 {
+		return fmt.Errorf("Error: No PDF found with ID %d", id)
+	}
+
+	lib.PDFs = append(lib.PDFs[:foundIndex], lib.PDFs[foundIndex+1:]...)
+
+	if err := storage.SaveLibrary(lib); err != nil {
+		return fmt.Errorf("Error saving library after removal: %v", err)
+	}
+	return nil
+}
