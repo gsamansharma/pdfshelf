@@ -18,6 +18,7 @@ var (
 	paginationStyle = list.DefaultStyles().PaginationStyle.PaddingLeft(4)
 	helpStyle       = list.DefaultStyles().HelpStyle.PaddingLeft(4).PaddingBottom(1)
 	quitTextStyle     = lipgloss.NewStyle().Margin(1, 0, 2, 4)
+	warningStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true).BorderForeground(lipgloss.Color("204")).Padding(1, 2)
 )
 
 type item struct {
@@ -37,6 +38,8 @@ type TUIModel struct {
 	SelectedEntry  *model.PDFEntry 
 	SelectedIndex  int            
 	quitting       bool
+	state           string
+	itemToDelete    item 
 }
 
 func New(pdfEntries []model.PDFEntry) TUIModel {
@@ -57,10 +60,9 @@ func New(pdfEntries []model.PDFEntry) TUIModel {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open")),
 			key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
-			key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
 		}
 	}
-	return TUIModel{List: l}
+	return TUIModel{List: l, state: "browsing"}
 }
 
 func (m TUIModel) Init() tea.Cmd {
@@ -68,6 +70,25 @@ func (m TUIModel) Init() tea.Cmd {
 }
 
 func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.state == "deleting" {
+		if msg, ok := msg.(tea.KeyMsg); ok {
+			switch msg.String() {
+			case "y", "Y":
+				idStr := fmt.Sprintf("%d", m.itemToDelete.entry.ID)
+				if err := commands.Remove(idStr); err != nil {
+					m.List.NewStatusMessage(fmt.Sprintf("Error: %v", err))
+				} else {
+					m.List.RemoveItem(m.List.Index())
+					m.List.NewStatusMessage(fmt.Sprintf("Removed '%s'", m.itemToDelete.Title()))
+				}
+				m.state = "browsing" 
+
+			case "n", "N", "esc":
+				m.state = "browsing"
+			}
+		}
+		return m, nil
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.List.SetWidth(msg.Width)
@@ -95,20 +116,10 @@ func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "d":
 			i, ok := m.List.SelectedItem().(item)
-			if !ok {
-				return m, nil 
+			if ok {
+				m.itemToDelete = i
+				m.state = "deleting"
 			}
-
-			idStr := fmt.Sprintf("%d", i.entry.ID)
-
-			if err := commands.Remove(idStr); err != nil {
-				m.List.NewStatusMessage(fmt.Sprintf("Error: %v", err))
-				return m, nil
-			}
-
-			m.List.RemoveItem(m.List.Index())
-			m.List.NewStatusMessage(fmt.Sprintf("Removed '%s'", i.Title()))
-
 			return m, nil
 		}
 	}
@@ -125,6 +136,16 @@ func (m TUIModel) View() string {
 		}
 		return quitTextStyle.Render("Bye!")
 	}
+
+	if m.state == "deleting" {
+		question := fmt.Sprintf("Are you sure you want to delete '%s'? (y/N)", m.itemToDelete.Title())
+		return lipgloss.Place(
+			m.List.Width(), m.List.Height(),
+			lipgloss.Center, lipgloss.Center,
+			warningStyle.Render(question),
+		)
+	}
+
 	return docStyle.Render(m.List.View())
 }
 
